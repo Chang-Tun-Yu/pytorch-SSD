@@ -7,6 +7,7 @@ from vision.ssd.mobilenetv3_ssd_lite import create_mobilenetv3_large_ssd_lite, c
 from vision.utils.misc import Timer
 import cv2
 import sys
+import os
 import numpy
 
 
@@ -57,6 +58,9 @@ image = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB)
 boxes, labels, probs = predictor.predict(image, 10, 0.4)
 
 boxes = boxes.cpu().detach().numpy()
+labels = labels.cpu().detach().numpy()
+probs = probs.cpu().detach().numpy()
+
 for i in range(boxes.shape[0]):
     box = boxes[i, :].astype(int)
     cv2.rectangle(orig_image, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
@@ -71,3 +75,76 @@ for i in range(boxes.shape[0]):
 path = "run_ssd_example_output.jpg"
 cv2.imwrite(path, orig_image)
 print(f"Found {len(probs)} objects. The output image is {path}")
+
+
+# if len(sys.argv) < 4:
+#     print('Usage: python run_ssd_example.py <net type>  <model path> <label path> <image path>')
+#     sys.exit(0)
+# net_type = sys.argv[1]
+# model_path = sys.argv[2]
+# label_path = sys.argv[3]
+
+# for i in range(500):
+    
+#     image_path = os.path.join("C:/Users/user/Desktop/image_300", "{}.png".format(i+1))
+
+#     class_names = [name.strip() for name in open(label_path).readlines()]
+
+#     if net_type == 'vgg16-ssd':
+#         net = create_vgg_ssd(len(class_names), is_test=True)
+#     elif net_type == 'mb1-ssd':
+#         net = create_mobilenetv1_ssd(len(class_names), is_test=True)
+#     elif net_type == 'mb1-ssd-lite':
+#         net = create_mobilenetv1_ssd_lite(len(class_names), is_test=True)
+#     elif net_type == 'mb2-ssd-lite':
+#         net = create_mobilenetv2_ssd_lite(len(class_names), is_test=True)
+#     elif net_type == 'mb3-large-ssd-lite':
+#         net = create_mobilenetv3_large_ssd_lite(len(class_names), is_test=True)
+#     elif net_type == 'mb3-small-ssd-lite':
+#         net = create_mobilenetv3_small_ssd_lite(len(class_names), is_test=True)
+#     elif net_type == 'sq-ssd-lite':
+#         net = create_squeezenet_ssd_lite(len(class_names), is_test=True)
+#     else:
+#         print("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
+#         sys.exit(1)
+#     net.load(model_path)
+
+#     if net_type == 'vgg16-ssd':
+#         predictor = create_vgg_ssd_predictor(net, candidate_size=200)
+#     elif net_type == 'mb1-ssd':
+#         predictor = create_mobilenetv1_ssd_predictor(net, candidate_size=200)
+#     elif net_type == 'mb1-ssd-lite':
+#         predictor = create_mobilenetv1_ssd_lite_predictor(net, candidate_size=200)
+#     elif net_type == 'mb2-ssd-lite' or net_type == "mb3-large-ssd-lite" or net_type == "mb3-small-ssd-lite":
+#         predictor = create_mobilenetv2_ssd_lite_predictor(net, candidate_size=200)
+#     elif net_type == 'sq-ssd-lite':
+#         predictor = create_squeezenet_ssd_lite_predictor(net, candidate_size=200)
+#     else:
+#         predictor = create_vgg_ssd_predictor(net, candidate_size=200)
+
+#     orig_image = cv2.imread(image_path)
+#     image = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB)
+#     boxes, labels, probs = predictor.predict(image, 10, 0.4)
+
+#     boxes = boxes.cpu().detach().numpy()
+#     labels = labels.cpu().detach().numpy()
+#     probs = probs.cpu().detach().numpy()
+
+#     with open(os.path.join("C:/Users/user/Desktop/ans", "{}.txt".format(i+1)), "w") as f:
+#         f.write(str(boxes.shape[0]))
+#         f.write("\n")
+#         for j in range(boxes.shape[0]):
+#             f.write(str(boxes[j][0]))
+#             f.write(" ")
+#             f.write(str(boxes[j][1]))
+#             f.write(" ")
+#             f.write(str(boxes[j][2]))
+#             f.write(" ")
+#             f.write(str(boxes[j][3]))
+#             f.write(" ")
+#             f.write(str(labels[j]))
+#             f.write(" ")
+#             f.write(str(probs[j]))
+#             f.write("\n")
+
+# print(class_names)

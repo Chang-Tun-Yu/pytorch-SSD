@@ -10,25 +10,26 @@ SSDSpec = collections.namedtuple('SSDSpec', ['feature_map_size', 'shrinkage', 'b
 
 
 def generate_ssd_priors(specs: List[SSDSpec], image_size, clamp=True) -> torch.Tensor:
-    """Generate SSD Prior Boxes.
+    
+    # Generate SSD Prior Boxes.
 
-    It returns the center, height and width of the priors. The values are relative to the image size
-    Args:
-        specs: SSDSpecs about the shapes of sizes of prior boxes. i.e.
-            specs = [
-                SSDSpec(38, 8, SSDBoxSizes(30, 60), [2]),
-                SSDSpec(19, 16, SSDBoxSizes(60, 111), [2, 3]),
-                SSDSpec(10, 32, SSDBoxSizes(111, 162), [2, 3]),
-                SSDSpec(5, 64, SSDBoxSizes(162, 213), [2, 3]),
-                SSDSpec(3, 100, SSDBoxSizes(213, 264), [2]),
-                SSDSpec(1, 300, SSDBoxSizes(264, 315), [2])
-            ]
-        image_size: image size.
-        clamp: if true, clamp the values to make fall between [0.0, 1.0]
-    Returns:
-        priors (num_priors, 4): The prior boxes represented as [[center_x, center_y, w, h]]. All the values
-            are relative to the image size.
-    """
+    # It returns the center, height and width of the priors. The values are relative to the image size
+    # Args:
+    #     specs: SSDSpecs about the shapes of sizes of prior boxes. i.e.
+    #         specs = [
+    #             SSDSpec(38, 8, SSDBoxSizes(30, 60), [2]),
+    #             SSDSpec(19, 16, SSDBoxSizes(60, 111), [2, 3]),
+    #             SSDSpec(10, 32, SSDBoxSizes(111, 162), [2, 3]),
+    #             SSDSpec(5, 64, SSDBoxSizes(162, 213), [2, 3]),
+    #             SSDSpec(3, 100, SSDBoxSizes(213, 264), [2]),
+    #             SSDSpec(1, 300, SSDBoxSizes(264, 315), [2])
+    #         ]
+    #     image_size: image size.
+    #     clamp: if true, clamp the values to make fall between [0.0, 1.0]
+    # Returns:
+    #     priors (num_priors, 4): The prior boxes represented as [[center_x, center_y, w, h]]. All the values
+    #         are relative to the image size.
+    
     priors = []
     for spec in specs:
         scale = image_size / spec.shrinkage

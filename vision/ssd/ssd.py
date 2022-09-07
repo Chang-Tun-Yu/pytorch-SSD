@@ -8,7 +8,30 @@ from ..utils import box_utils
 from collections import namedtuple
 GraphPath = namedtuple("GraphPath", ['s0', 'name', 's1'])  #
 
+def align(n, block):
+    # align n to block size
+    return n + (block - n % block) % block
+def encode_conv2d_IF(tensor):
+        ''' encode ifmap tensor
+            input:  C-H-W
+            output: C-H-W-Hp-Wp-Cp
+        '''
+        assert len(tensor.shape) == 3
+        C, H, W = tensor.shape
+        Kp, Cp, Hp, Wp = 1,32,1,1
+        Ca = align(C, Cp)
+        if (H % Hp + W % Wp):
+            print(H, W, Hp, Wp)
+        assert (H % Hp + W % Wp) == 0
 
+        z = np.zeros((Ca-C, H, W))
+        tensor = np.concatenate((tensor, z), 0)
+        
+        
+        tensor = np.reshape(tensor, (Ca//Cp, Cp, H//Hp, Hp, W//Wp, Wp)) # C-Cp-H-Hp-W-Wp
+        tensor = np.transpose(tensor, (0,2,4,3,5,1)) # convert to C-H-W-Hp-Wp-Cp
+        tensor = tensor.flatten()
+        return tensor
 class SSD(nn.Module):
     def __init__(self, num_classes: int, base_net: nn.ModuleList, source_layer_indexes: List[int],
                  extras: nn.ModuleList, classification_headers: nn.ModuleList,
@@ -35,6 +58,20 @@ class SSD(nn.Module):
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if is_test:
             self.config = config
+            # save prior information
+            with open("./tensor_comp/prior.txt", "w") as f:
+                f.write(str(config.priors.shape[0]))
+                f.write("\n")
+                for i in range(config.priors.shape[0]):
+                    f.write(str(config.priors[i, 0].item()))
+                    f.write(" ")
+                    f.write(str(config.priors[i, 1].item()))
+                    f.write(" ")
+                    f.write(str(config.priors[i, 2].item()))
+                    f.write(" ")
+                    f.write(str(config.priors[i, 3].item()))
+                    f.write(" ")
+                    f.write("\n")
             self.priors = config.priors.to(self.device)
             
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -86,8 +123,22 @@ class SSD(nn.Module):
 
         confidences = torch.cat(confidences, 1)
         locations = torch.cat(locations, 1)
-        # print("confidences dimenetion:", confidences.size())
-        # print("locations dimenetion:", locations.size())
+        _confidence = confidences.clone().detach()
+        _confidence = _confidence.cpu().detach().numpy()
+        with open("./tensor_comp/output/conf.txt", "w") as f:
+            for k in range(_confidence.shape[1]):
+                for j in range(self.num_classes):
+                    f.write(str(_confidence[0, k, j]))
+                    f.write("\n")
+        _location = locations.clone().detach()
+        _location = _location.cpu().detach().numpy()
+        with open("./tensor_comp/output/loc.txt", "w") as f:
+            for k in range(_location.shape[1]):
+                for j in range(4):
+                    f.write(str(_location[0, k, j]))
+                    f.write("\n")
+        print("confidences dimenetion:", confidences.size())
+        print("locations dimenetion:", locations.size())
         
         if self.is_test:
             confidences = F.softmax(confidences, dim=2)
@@ -102,13 +153,45 @@ class SSD(nn.Module):
             return confidences, locations
 
     def compute_header(self, i, x):
+        _type = "orig"
         confidence = self.classification_headers[i](x)
+        # torch.save(confidence, "tensor_comp/{}/{}.pt".format(_type, "confidence"+str(i)))
+        _confidence = confidence.clone().detach()
+        _confidence = _confidence.cpu().detach().numpy()
+        _confidence = encode_conv2d_IF(_confidence[0])
+        with open("./tensor_comp/input/conf_{}.txt".format(i), "w") as f:
+            for j in range(_confidence.shape[0]):
+                f.write(str(_confidence[j]))
+                f.write("\n")
         confidence = confidence.permute(0, 2, 3, 1).contiguous()
         confidence = confidence.view(confidence.size(0), -1, self.num_classes)
+        _confidence = confidence.clone().detach()
+        _confidence = _confidence.cpu().detach().numpy()
+        # with open("./tensor_comp/output/conf_{}.txt".format(i), "w") as f:
+        #     for k in range(_confidence.shape[1]):
+        #         for j in range(self.num_classes):
+        #             f.write(str(_confidence[0, k, j]))
+        #             f.write("\n")
 
         location = self.regression_headers[i](x)
+        # torch.save(location, "tensor_comp/{}/{}.pt".format(_type, "location"+str(i)))
+        _location = location.clone().detach()
+        _location = _location.cpu().detach().numpy()
+        _location = encode_conv2d_IF(_location[0])
+        with open("./tensor_comp/input/loc_{}.txt".format(i), "w") as f:
+            for j in range(_location.shape[0]):
+                f.write(str(_location[j]))
+                f.write("\n")
+        # print("location {} size:".format(i), location.size())
         location = location.permute(0, 2, 3, 1).contiguous()
         location = location.view(location.size(0), -1, 4)
+        _location = location.clone().detach()
+        _location = _location.cpu().detach().numpy()
+        # with open("./tensor_comp/output/loc_{}.txt".format(i), "w") as f:
+        #     for k in range(_location.shape[1]):
+        #         for j in range(4):
+        #             f.write(str(_location[0, k, j]))
+        #             f.write("\n")
 
         return confidence, location
 
