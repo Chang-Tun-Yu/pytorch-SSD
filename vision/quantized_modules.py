@@ -294,7 +294,7 @@ class QConv2d(nnqat.Conv2d):
             save_np(os.path.join(self.dump_folder, self.layer_name),'output_scale', to_np(torch.tensor([output_scale])))
             save_np(os.path.join(self.dump_folder, self.layer_name),'output_zp', to_np(torch.tensor([output_zp])))
             # Dump multiplier & shifter
-            save_np(os.path.join(self.dump_folder, self.layer_name),'multiplier', to_np(torch.tensor([m])))
+            save_np(os.path.join(self.dump_folder, self.layer_name),'multiplier', to_np(torch.round(torch.tensor([m * 256]))))
             save_np(os.path.join(self.dump_folder, self.layer_name),'shifter', to_np(torch.tensor([shift])))
         return hwsim_output
 
@@ -395,7 +395,7 @@ class QConvReLU2d(nnqat.Conv2d):
             save_np(os.path.join(self.dump_folder, self.layer_name),'output_scale', to_np(torch.tensor([output_scale])))
             save_np(os.path.join(self.dump_folder, self.layer_name),'output_zp', to_np(torch.tensor([output_zp])))
             # Dump multiplier & shifter
-            save_np(os.path.join(self.dump_folder, self.layer_name),'multiplier', to_np(torch.tensor([m])))
+            save_np(os.path.join(self.dump_folder, self.layer_name),'multiplier', to_np(torch.round(torch.tensor([m * 256]))))
             save_np(os.path.join(self.dump_folder, self.layer_name),'shifter', to_np(torch.tensor([shift])))
         return hwsim_output
 
@@ -481,10 +481,10 @@ class Q_Addition(nn.Module):
         m1, shift1 = get_mult_shift(input1_scale, 1, output_scale)
         m2, shift2 = get_mult_shift(input2_scale, 1, output_scale)
         if dump:
-            save_np(os.path.join(self.dump_folder, self.layer_name), "input1_scale", to_np(torch.tensor[input1_scale]))
-            save_np(os.path.join(self.dump_folder, self.layer_name), "input1_zp", to_np(torch.tensor[input1_zp]))
-            save_np(os.path.join(self.dump_folder, self.layer_name), "input2_scale", to_np(torch.tensor[input2_scale]))
-            save_np(os.path.join(self.dump_folder, self.layer_name), "input2_zp", to_np(torch.tensor[input2_zp]))
+            save_np(os.path.join(self.dump_folder, self.layer_name), "input1_scale", to_np(input1_scale))
+            save_np(os.path.join(self.dump_folder, self.layer_name), "input1_zp", to_np(input1_zp))
+            save_np(os.path.join(self.dump_folder, self.layer_name), "input2_scale", to_np(input2_scale))
+            save_np(os.path.join(self.dump_folder, self.layer_name), "input2_zp", to_np(input2_zp))
         # hw compatable
         int_input1 = torch.round(input1 / input1_scale + input1_zp)
         int_input2 = torch.round(input2 / input2_scale + input2_zp)
@@ -504,9 +504,9 @@ class Q_Addition(nn.Module):
             save_np(os.path.join(self.dump_folder, self.layer_name), "output_scale", to_np(output_scale))
             save_np(os.path.join(self.dump_folder, self.layer_name), "output_zp", to_np(output_zp))
             # Dump multiplier & shifter
-            save_np(os.path.join(self.dump_folder, self.layer_name),'1_multiplier', to_np(torch.tensor([m1])))
+            save_np(os.path.join(self.dump_folder, self.layer_name),'1_multiplier', to_np(torch.round(torch.tensor([m1 * 256]))))
             save_np(os.path.join(self.dump_folder, self.layer_name),'1_shifter', to_np(torch.tensor([shift1])))
-            save_np(os.path.join(self.dump_folder, self.layer_name),'2_multiplier', to_np(torch.tensor([m2])))
+            save_np(os.path.join(self.dump_folder, self.layer_name),'2_multiplier', to_np(torch.round(torch.tensor([m2 * 256]))))
             save_np(os.path.join(self.dump_folder, self.layer_name),'2_shifter', to_np(torch.tensor([shift2])))
         return hwsim_output
 

@@ -4,6 +4,8 @@ log
 models
 
 eval_results/
+quant_dump/
+
 
 # Pytorch Models
 *.pth

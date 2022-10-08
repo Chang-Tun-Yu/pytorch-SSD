@@ -22,7 +22,7 @@ if len(sys.argv) < 3:
 model_path = sys.argv[1]
 label_path = sys.argv[2]
 
-for i in range(1, 100):
+for i in range(1, 10):
     
     image_path = os.path.join("D:/10_dataset/VOC/VOC2007_test/JPEGImages", f'{i:06}.jpg')
     # os.mkdir("C:/Users/user/Desktop/tensor/{}".format(i+1))

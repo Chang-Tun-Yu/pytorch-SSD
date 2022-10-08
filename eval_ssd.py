@@ -12,7 +12,9 @@ import pathlib
 import numpy as np
 import logging
 import sys
+import cv2
 from vision.ssd.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite, create_mobilenetv2_ssd_lite_predictor
+from vision.ssd.mobilenet_v2_ssd_quant import create_mobilenetv2_ssd_qunat, create_mobilenetv2_ssd_quant_predictor
 from vision.ssd.mobilenetv3_ssd_lite import create_mobilenetv3_large_ssd_lite, create_mobilenetv3_small_ssd_lite
 
 
@@ -32,6 +34,9 @@ parser.add_argument("--iou_threshold", type=float, default=0.5, help="The thresh
 parser.add_argument("--eval_dir", default="eval_results", type=str, help="The directory to store evaluation results.")
 parser.add_argument('--mb2_width_mult', default=1.0, type=float,
                     help='Width Multiplifier for MobilenetV2')
+parser.add_argument('--ssd_float',
+                    help='floating-number net mb2-ssd')
+
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
 
@@ -146,11 +151,21 @@ if __name__ == '__main__':
         net = create_mobilenetv3_large_ssd_lite(len(class_names), is_test=True)
     elif args.net == 'mb3-small-ssd-lite':
         net = create_mobilenetv3_small_ssd_lite(len(class_names), is_test=True)
+    elif args.net == 'mb2-ssd-quant':
+        float_net = create_mobilenetv2_ssd_lite(len(class_names), is_test=True, image_i=0)
+        float_net.load(args.ssd_float)
+        float_net = float_net.eval()
+        modules_to_fuse = []
+        with open("fuse_list.txt", "r") as f:
+            for l in f:
+                l_list = l.strip().split()
+                modules_to_fuse.append(l_list)
+        torch.ao.quantization.fuse_modules(float_net, modules_to_fuse, inplace=True)
+        net = create_mobilenetv2_ssd_qunat(len(class_names), float_net, "./quant_dump", is_test=True)
     else:
         logging.fatal("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
         parser.print_help(sys.stderr)
         sys.exit(1)
-
     timer.start("Load Model")
     net.load(args.trained_model)
     net = net.to(DEVICE)
@@ -165,6 +180,8 @@ if __name__ == '__main__':
         predictor = create_squeezenet_ssd_lite_predictor(net,nms_method=args.nms_method, device=DEVICE)
     elif args.net == 'mb2-ssd-lite' or args.net == "mb3-large-ssd-lite" or args.net == "mb3-small-ssd-lite":
         predictor = create_mobilenetv2_ssd_lite_predictor(net, nms_method=args.nms_method, device=DEVICE)
+    elif args.net == 'mb2-ssd-quant':
+        predictor = create_mobilenetv2_ssd_quant_predictor(net, candidate_size=200, device=DEVICE)
     else:
         logging.fatal("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
         parser.print_help(sys.stderr)
@@ -177,7 +194,7 @@ if __name__ == '__main__':
         image = dataset.get_image(i)
         print("Load Image: {:4f} seconds.".format(timer.end("Load Image")))
         timer.start("Predict")
-        boxes, labels, probs = predictor.predict(image)
+        boxes, labels, probs = predictor.predict(image, 10, 0.4)
         print("Prediction: {:4f} seconds.".format(timer.end("Predict")))
         indexes = torch.ones(labels.size(0), 1, dtype=torch.float32) * i
         results.append(torch.cat([
