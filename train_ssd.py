@@ -14,6 +14,7 @@ from vision.ssd.vgg_ssd import create_vgg_ssd
 from vision.ssd.mobilenetv1_ssd import create_mobilenetv1_ssd
 from vision.ssd.mobilenetv1_ssd_lite import create_mobilenetv1_ssd_lite
 from vision.ssd.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite
+from vision.ssd.mobilenet_v2_ssd_quant import create_mobilenetv2_ssd_qunat
 from vision.ssd.mobilenetv3_ssd_lite import create_mobilenetv3_large_ssd_lite, create_mobilenetv3_small_ssd_lite
 from vision.ssd.squeezenet_ssd_lite import create_squeezenet_ssd_lite
 from vision.datasets.voc_dataset import VOCDataset
@@ -34,6 +35,8 @@ parser.add_argument('--datasets', nargs='+', help='Dataset directory path')
 parser.add_argument('--validation_dataset', help='Dataset directory path')
 parser.add_argument('--balance_data', action='store_true',
                     help="Balance training data by down-sampling more frequent labels.")
+parser.add_argument("--quant", default=False, type=bool,
+                    help='is QAT')
 
 
 parser.add_argument('--net', default="vgg16-ssd",
@@ -62,6 +65,8 @@ parser.add_argument('--extra_layers_lr', default=None, type=float,
 
 
 # Params for loading pretrained basenet or checkpoints.
+parser.add_argument('--ssd_float',
+                    help='floating number ssd')
 parser.add_argument('--base_net',
                     help='Pretrained base model')
 parser.add_argument('--pretrained_ssd', help='Pre-trained base model')
@@ -170,8 +175,9 @@ def test(loader, net, criterion, device):
 
 if __name__ == '__main__':
     timer = Timer()
-
     logging.info(args)
+    with open(os.path.join(args.checkpoint_folder, "args.txt"), "w") as f:
+        f.write(str(args))
     if args.net == 'vgg16-ssd':
         create_net = create_vgg_ssd
         config = vgg_ssd_config
@@ -192,6 +198,18 @@ if __name__ == '__main__':
         config = mobilenetv1_ssd_config
     elif args.net == 'mb3-small-ssd-lite':
         create_net = lambda num: create_mobilenetv3_small_ssd_lite(num)
+        config = mobilenetv1_ssd_config
+    elif args.net == 'mb2-ssd-lite-quant':
+        float_net = create_mobilenetv2_ssd_lite(21, is_test=True, image_i=0)
+        float_net.load(args.ssd_float)
+        float_net = float_net.eval()
+        modules_to_fuse = []
+        with open("fuse_list.txt", "r") as f:
+            for l in f:
+                l_list = l.strip().split()
+                modules_to_fuse.append(l_list)
+        torch.ao.quantization.fuse_modules(float_net, modules_to_fuse, inplace=True)
+        create_net = lambda num: create_mobilenetv2_ssd_qunat(num, float_net, "./quant_dump")
         config = mobilenetv1_ssd_config
     else:
         logging.fatal("The net type is wrong.")
@@ -272,6 +290,16 @@ if __name__ == '__main__':
         freeze_net_layers(net.extras)
         params = itertools.chain(net.regression_headers.parameters(), net.classification_headers.parameters())
         logging.info("Freeze all the layers except prediction heads.")
+    elif args.quant:
+        params = [
+            {'params': net.mobilenet_0.parameters(), 'lr': base_net_lr},
+            {'params': net.mobilenet_1.parameters(), 'lr': base_net_lr},
+            {'params': net.extras.parameters(), 'lr': extra_layers_lr},
+            {'params': itertools.chain(
+                net.regression_headers.parameters(),
+                net.classification_headers.parameters()
+            )}
+        ]
     else:
         params = [
             {'params': net.base_net.parameters(), 'lr': base_net_lr},
@@ -285,6 +313,7 @@ if __name__ == '__main__':
             )}
         ]
 
+    # TODO: from fused network / from quantized network
     timer.start("Load Model")
     if args.resume:
         logging.info(f"Resume from the model {args.resume}")

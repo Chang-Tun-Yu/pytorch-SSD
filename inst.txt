@@ -1,0 +1,9 @@
+python run_ssd_example.py mb2-ssd-lite models/mb2-ssd-lite-mp-0_686.pth models/voc-model-labels.txt
+python train_ssd.py --dataset_type voc  --datasets D:/10_dataset/VOC/VOC2007 D:/10_dataset/VOC/VOC2012 --validation_dataset D:/10_dataset/VOC/VOC2007_test --net mb2-ssd-lite --base_net models/mb2-imagenet-71_8.pth  --scheduler cosine --lr 0.01 --t_max 200 --validation_epochs 5 --num_epochs 20 --debug_steps 5 --checkpoint_folder ckpt/ --num_workers=0
+python train_ssd.py --dataset_type voc  --datasets D:/10_dataset/VOC/VOC2007 D:/10_dataset/VOC/VOC2012 --validation_dataset D:/10_dataset/VOC/VOC2007_test --net mb2-ssd-lite --resume models/mb2-ssd-lite-mp-0_686.pth --scheduler cosine --lr 0.01 --t_max 200 --validation_epochs 5 --num_epochs 20 --debug_steps 5 --checkpoint_folder ckpt/ --num_workers=0
+python train_ssd.py --dataset_type voc  --datasets D:/10_dataset/VOC/VOC2007 D:/10_dataset/VOC/VOC2012 --validation_dataset D:/10_dataset/VOC/VOC2007_test --net mb2-ssd-lite-quant --ssd_float models/mb2-ssd-lite-mp-0_686.pth --quant True --scheduler cosine --lr 0.002 --t_max 20 --validation_epochs 2 --num_epochs 15 --debug_steps 5 --checkpoint_folder ckpt/q_v1/ --num_workers=0
+
+Validation Loss: 2.7384, Validation Regression Loss 0.8052, Validation Classification Loss: 1.9333
+
+quant example
+python run_ssd_quant.py ./ckpt/mb2-ssd-lite-quant.pth models/voc-model-labels.txt

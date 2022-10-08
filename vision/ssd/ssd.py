@@ -35,7 +35,7 @@ def encode_conv2d_IF(tensor):
 class SSD(nn.Module):
     def __init__(self, num_classes: int, base_net: nn.ModuleList, source_layer_indexes: List[int],
                  extras: nn.ModuleList, classification_headers: nn.ModuleList,
-                 regression_headers: nn.ModuleList, is_test=False, config=None, device=None):
+                 regression_headers: nn.ModuleList, is_test=False, config=None, device=None, image_i=0):
         """Compose a SSD model using the given components.
         """
         super(SSD, self).__init__()
@@ -48,6 +48,7 @@ class SSD(nn.Module):
         self.regression_headers = regression_headers
         self.is_test = is_test
         self.config = config
+        self.image_i = image_i
 
         # register layers in source_layer_indexes by adding them to a module list
         self.source_layer_add_ons = nn.ModuleList([t[1] for t in source_layer_indexes
@@ -58,20 +59,43 @@ class SSD(nn.Module):
             self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if is_test:
             self.config = config
+            # with open("./tensor_comp/config.txt", "w") as f:
+            #     f.write("image_size ")
+            #     f.write(str(config.image_size))
+            #     f.write(str("\n"))
+            #     f.write("image_mean ")
+            #     f.write(str(config.image_mean[0]))
+            #     f.write(str(" "))
+            #     f.write(str(config.image_mean[1]))
+            #     f.write(str(" "))
+            #     f.write(str(config.image_mean[2]))
+            #     f.write(str("\n"))
+            #     f.write("image_std ")
+            #     f.write(str(config.image_std))
+            #     f.write(str("\n"))
+            #     f.write("iou_threshold ")
+            #     f.write(str(config.iou_threshold))
+            #     f.write(str("\n"))
+            #     f.write("center_variance ")
+            #     f.write(str(config.center_variance))
+            #     f.write(str("\n"))
+            #     f.write("size_variance ")
+            #     f.write(str(config.size_variance))
+            #     f.write(str("\n"))
             # save prior information
-            with open("./tensor_comp/prior.txt", "w") as f:
-                f.write(str(config.priors.shape[0]))
-                f.write("\n")
-                for i in range(config.priors.shape[0]):
-                    f.write(str(config.priors[i, 0].item()))
-                    f.write(" ")
-                    f.write(str(config.priors[i, 1].item()))
-                    f.write(" ")
-                    f.write(str(config.priors[i, 2].item()))
-                    f.write(" ")
-                    f.write(str(config.priors[i, 3].item()))
-                    f.write(" ")
-                    f.write("\n")
+            # with open("./tensor_comp/prior.txt", "w") as f:
+            #     f.write(str(config.priors.shape[0]))
+            #     f.write("\n")
+            #     for i in range(config.priors.shape[0]):
+            #         f.write(str(config.priors[i, 0].item()))
+            #         f.write(" ")
+            #         f.write(str(config.priors[i, 1].item()))
+            #         f.write(" ")
+            #         f.write(str(config.priors[i, 2].item()))
+            #         f.write(" ")
+            #         f.write(str(config.priors[i, 3].item()))
+            #         f.write(" ")
+            #         f.write("\n")
             self.priors = config.priors.to(self.device)
             
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -123,22 +147,22 @@ class SSD(nn.Module):
 
         confidences = torch.cat(confidences, 1)
         locations = torch.cat(locations, 1)
-        _confidence = confidences.clone().detach()
-        _confidence = _confidence.cpu().detach().numpy()
-        with open("./tensor_comp/output/conf.txt", "w") as f:
-            for k in range(_confidence.shape[1]):
-                for j in range(self.num_classes):
-                    f.write(str(_confidence[0, k, j]))
-                    f.write("\n")
-        _location = locations.clone().detach()
-        _location = _location.cpu().detach().numpy()
-        with open("./tensor_comp/output/loc.txt", "w") as f:
-            for k in range(_location.shape[1]):
-                for j in range(4):
-                    f.write(str(_location[0, k, j]))
-                    f.write("\n")
-        print("confidences dimenetion:", confidences.size())
-        print("locations dimenetion:", locations.size())
+        # _confidence = confidences.clone().detach()
+        # _confidence = _confidence.cpu().detach().numpy()
+        # with open("./tensor_comp/output/conf.txt", "w") as f:
+        #     for k in range(_confidence.shape[1]):
+        #         for j in range(self.num_classes):
+        #             f.write(str(_confidence[0, k, j]))
+        #             f.write("\n")
+        # _location = locations.clone().detach()
+        # _location = _location.cpu().detach().numpy()
+        # with open("./tensor_comp/output/loc.txt", "w") as f:
+        #     for k in range(_location.shape[1]):
+        #         for j in range(4):
+        #             f.write(str(_location[0, k, j]))
+        #             f.write("\n")
+        # print("confidences dimenetion:", confidences.size())
+        # print("locations dimenetion:", locations.size())
         
         if self.is_test:
             confidences = F.softmax(confidences, dim=2)
@@ -146,8 +170,21 @@ class SSD(nn.Module):
                 locations, self.priors, self.config.center_variance, self.config.size_variance
             )
             boxes = box_utils.center_form_to_corner_form(boxes)
-            print("confidences dimenetion:", confidences.size())
-            print("boxes dimenetion:", boxes.size())
+            # output
+            # _confidence = confidences.clone().detach()
+            # _confidence = _confidence.cpu().detach().numpy()
+            # with open("./tensor_comp/ssd/conf.txt", "w") as f:
+            #     for k in range(_confidence.shape[1]):
+            #         for j in range(self.num_classes):
+            #             f.write(str(_confidence[0, k, j]))
+            #             f.write("\n")
+            # _location = boxes.clone().detach()
+            # _location = _location.cpu().detach().numpy()
+            # with open("./tensor_comp/ssd/loc.txt", "w") as f:
+            #     for k in range(_location.shape[1]):
+            #         for j in range(4):
+            #             f.write(str(_location[0, k, j]))
+            #             f.write("\n")
             return confidences, boxes
         else:
             return confidences, locations
@@ -159,39 +196,25 @@ class SSD(nn.Module):
         _confidence = confidence.clone().detach()
         _confidence = _confidence.cpu().detach().numpy()
         _confidence = encode_conv2d_IF(_confidence[0])
-        with open("./tensor_comp/input/conf_{}.txt".format(i), "w") as f:
-            for j in range(_confidence.shape[0]):
-                f.write(str(_confidence[j]))
-                f.write("\n")
+        # with open("C:/Users/user/Desktop/tensor/{}/conf_{}.txt".format(self.image_i ,i), "w") as f:
+        #     for j in range(_confidence.shape[0]):
+        #         f.write(str(_confidence[j]))
+        #         f.write("\n")
         confidence = confidence.permute(0, 2, 3, 1).contiguous()
         confidence = confidence.view(confidence.size(0), -1, self.num_classes)
-        _confidence = confidence.clone().detach()
-        _confidence = _confidence.cpu().detach().numpy()
-        # with open("./tensor_comp/output/conf_{}.txt".format(i), "w") as f:
-        #     for k in range(_confidence.shape[1]):
-        #         for j in range(self.num_classes):
-        #             f.write(str(_confidence[0, k, j]))
-        #             f.write("\n")
 
         location = self.regression_headers[i](x)
         # torch.save(location, "tensor_comp/{}/{}.pt".format(_type, "location"+str(i)))
         _location = location.clone().detach()
         _location = _location.cpu().detach().numpy()
         _location = encode_conv2d_IF(_location[0])
-        with open("./tensor_comp/input/loc_{}.txt".format(i), "w") as f:
-            for j in range(_location.shape[0]):
-                f.write(str(_location[j]))
-                f.write("\n")
+        # with open("C:/Users/user/Desktop/tensor/{}/loc_{}.txt".format(self.image_i, i), "w") as f:
+        #     for j in range(_location.shape[0]):
+        #         f.write(str(_location[j]))
+        #         f.write("\n")
         # print("location {} size:".format(i), location.size())
         location = location.permute(0, 2, 3, 1).contiguous()
         location = location.view(location.size(0), -1, 4)
-        _location = location.clone().detach()
-        _location = _location.cpu().detach().numpy()
-        # with open("./tensor_comp/output/loc_{}.txt".format(i), "w") as f:
-        #     for k in range(_location.shape[1]):
-        #         for j in range(4):
-        #             f.write(str(_location[0, k, j]))
-        #             f.write("\n")
 
         return confidence, location
 

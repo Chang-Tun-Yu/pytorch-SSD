@@ -40,6 +40,18 @@ class Predictor:
         scores = scores[0]
         if not prob_threshold:
             prob_threshold = self.filter_threshold
+        # # write config
+        # with open("./tensor_comp/config.txt", "a") as f:
+        #     # f.write("nms_method ")
+        #     # f.write(str(self.nms_method)+"\n")
+        #     f.write("prob_threshold ")
+        #     f.write(str(prob_threshold)+"\n")
+        #     f.write("candidate_threshold ")
+        #     f.write(str(self.candidate_size)+"\n")
+        #     f.write("sigma ")
+        #     f.write(str(self.sigma)+"\n")
+        #     f.write("top_k ")
+        #     f.write(str(top_k)+"\n")
         # this version of nms is slower on GPU, so we move data to CPU.
         boxes = boxes.to(cpu_device)
         scores = scores.to(cpu_device)
@@ -61,6 +73,7 @@ class Predictor:
                                       candidate_size=self.candidate_size)
             picked_box_probs.append(box_probs)
             picked_labels.extend([class_index] * box_probs.size(0))
+        # print(picked_labels)
         if not picked_box_probs:
             return torch.tensor([]), torch.tensor([]), torch.tensor([])
         picked_box_probs = torch.cat(picked_box_probs)
