@@ -181,7 +181,7 @@ if __name__ == '__main__':
     elif args.net == 'mb2-ssd-lite' or args.net == "mb3-large-ssd-lite" or args.net == "mb3-small-ssd-lite":
         predictor = create_mobilenetv2_ssd_lite_predictor(net, nms_method=args.nms_method, device=DEVICE)
     elif args.net == 'mb2-ssd-quant':
-        predictor = create_mobilenetv2_ssd_quant_predictor(net, candidate_size=200, device=DEVICE)
+        predictor = create_mobilenetv2_ssd_quant_predictor(net, nms_method=args.nms_method, device=DEVICE)
     else:
         logging.fatal("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
         parser.print_help(sys.stderr)
@@ -194,7 +194,8 @@ if __name__ == '__main__':
         image = dataset.get_image(i)
         print("Load Image: {:4f} seconds.".format(timer.end("Load Image")))
         timer.start("Predict")
-        boxes, labels, probs = predictor.predict(image, 10, 0.4)
+        with torch.no_grad():            
+            boxes, labels, probs = predictor.predict(image)
         print("Prediction: {:4f} seconds.".format(timer.end("Predict")))
         indexes = torch.ones(labels.size(0), 1, dtype=torch.float32) * i
         results.append(torch.cat([

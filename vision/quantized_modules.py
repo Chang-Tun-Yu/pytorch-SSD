@@ -254,6 +254,67 @@ class QConv2d(nnqat.Conv2d):
         qat_conv.bias = mod.bias
         return qat_conv
 
+    def hwInference(self, weight, bias, input_tensor, dump=False):
+        with torch.no_grad():
+            input_scale = input_tensor.scale
+            input_zp = input_tensor.zero_point
+            weight_scale = self.weight_fake_quant.scale
+            weight_zp = self.weight_fake_quant.zero_point
+            output_scale = self.act_fake_quant.scale
+            output_zp = self.act_fake_quant.zero_point
+            m, shift = get_mult_shift(input_scale, weight_scale, output_scale)
+
+            # weight, bias and input tensor to int 
+            qweight = self.weight_fake_quant(weight.to(torch.float64))
+            int_weight = torch.round((qweight / weight_scale) + weight_zp)
+            int_bias = torch.round(bias.to(torch.float64) / (input_scale * weight_scale))
+            int_input = torch.round((input_tensor.to(torch.float64) / input_scale) + input_zp)
+
+            if dump:
+                # Dump weight & bias
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_weight', to_np(int_weight))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_bias', to_np(int_bias))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'weight_scale', to_np(torch.tensor([weight_scale])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'weight_zp', to_np(torch.tensor([weight_zp])))
+                # Dump input feature
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_input', to_np(int_input))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'input_scale', to_np(torch.tensor([input_scale])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'input_zp', to_np(torch.tensor([input_zp])))
+
+            # convolution
+            output = F.conv2d(
+                input = (int_input - input_zp), 
+                weight = (int_weight - weight_zp), 
+                bias = int_bias, 
+                stride = self.stride, 
+                padding = self.padding, 
+                dilation = self.dilation, 
+                groups = self.groups
+            )
+
+            # rounding
+            output = torch.div(output * (m * 256), 2**(shift), rounding_mode="floor")
+            output = torch.div(output, 256)
+            _mask = torch.logical_or( (torch.frac(output) == 0.5) , (torch.frac(output) == -0.5))
+            output[_mask] = output[_mask] + 0.5
+            output = torch.round(output) + output_zp
+            int_output = torch.clamp(output, 0, 255)
+            real_output = output_scale * (int_output - output_zp)
+
+            # output zp/scale
+            real_output.zero_point = output_zp
+            real_output.scale = output_scale
+            real_output.HW_SIM = input_tensor.HW_SIM
+            if dump:
+                real_output.DUMP = dump
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_output', to_np(int_output))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'output_scale', to_np(torch.tensor([output_scale])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'output_zp', to_np(torch.tensor([output_zp])))
+                # Dump multiplier & shifter
+                save_np(os.path.join(self.dump_folder, self.layer_name),'multiplier', to_np(torch.round(torch.tensor([m * 256]))))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'shifter', to_np(torch.tensor([shift])))
+            return real_output
+
     def hwsim(self, qweight, input_tensor, output_tensor, prequant_output_tensor, dump=False):
         input_scale = input_tensor.scale
         input_zp = input_tensor.zero_point
@@ -299,20 +360,26 @@ class QConv2d(nnqat.Conv2d):
         return hwsim_output
 
     def forward(self, input):
-        qweight = self.weight_fake_quant(self.weight)
-        weight_scale = self.weight_fake_quant.scale
-        qbias = torch.round(self.bias / (input.scale * weight_scale)) * (input.scale * weight_scale)
-        x = F.conv2d(input, qweight, qbias, self.stride, self.padding, self.dilation, self.groups)
-        if self.training: self.act_fake_quant.enable_observer()
-        else: self.act_fake_quant.disable_observer()
-        x_prequant = x.detach().clone()
-        x_quant = self.act_fake_quant(x_prequant)
-        x_quant.scale = self.act_fake_quant.scale
-        x_quant.zero_point = self.act_fake_quant.zero_point
-        ''' HW_SIM '''
-        if hasattr(input, 'HW_SIM') and input.HW_SIM:
-            x_quant = self.hwsim(qweight, input, x_quant, x, dump=(hasattr(input, 'DUMP') and input.DUMP))
-        #TODO: HW_SIM == False, gradient cannot propagate
+        # breakpoint()
+
+        if hasattr(input, 'testing') and input.testing:
+            x_quant = self.hwInference(self.weight, self.bias, input, dump=(hasattr(input, 'DUMP') and input.DUMP))
+            x_quant.testing = input.testing
+        else:
+            qweight = self.weight_fake_quant(self.weight)
+            weight_scale = self.weight_fake_quant.scale
+            qbias = torch.round(self.bias / (input.scale * weight_scale)) * (input.scale * weight_scale)
+            x = F.conv2d(input, qweight, qbias, self.stride, self.padding, self.dilation, self.groups)
+            if self.training: self.act_fake_quant.enable_observer()
+            else: self.act_fake_quant.disable_observer()
+            x_prequant = x.detach().clone()
+            x_quant = self.act_fake_quant(x_prequant)
+            x_quant.scale = self.act_fake_quant.scale
+            x_quant.zero_point = self.act_fake_quant.zero_point
+            ''' HW_SIM '''
+            if hasattr(input, 'HW_SIM') and input.HW_SIM:
+                x_quant = self.hwsim(qweight, input, x_quant, x, dump=(hasattr(input, 'DUMP') and input.DUMP))
+            #TODO: HW_SIM == False, gradient cannot propagate
         return x_quant
 
 
@@ -354,6 +421,71 @@ class QConvReLU2d(nnqat.Conv2d):
         qat_conv.weight = mod.weight
         qat_conv.bias = mod.bias
         return qat_conv
+
+    def hwInference(self, weight, bias, input_tensor, dump=False):
+        with torch.no_grad():
+            input_scale = input_tensor.scale
+            input_zp = input_tensor.zero_point
+            weight_scale = self.weight_fake_quant.scale
+            weight_zp = self.weight_fake_quant.zero_point
+            output_scale = self.act_fake_quant.scale
+            output_zp = self.act_fake_quant.zero_point
+            assert((output_scale * (255 - output_zp)).item() <=6 )
+            m, shift = get_mult_shift(input_scale, weight_scale, output_scale)
+
+            # weight, bias and input tensor to int 
+            qweight = self.weight_fake_quant(weight.to(torch.float64))
+            int_weight = torch.round((qweight / weight_scale) + weight_zp)
+            int_bias = torch.round(bias.to(torch.float64) / (input_scale * weight_scale))
+            int_input = torch.round((input_tensor.to(torch.float64) / input_scale) + input_zp)
+
+            if dump:
+                # Dump weight & bias
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_weight', to_np(int_weight))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_bias', to_np(int_bias))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'weight_scale', to_np(torch.tensor([weight_scale])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'weight_zp', to_np(torch.tensor([weight_zp])))
+                # Dump input feature
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_input', to_np(int_input))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'input_scale', to_np(torch.tensor([input_scale])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'input_zp', to_np(torch.tensor([input_zp])))
+
+            # convolution
+            output = F.conv2d(
+                input = (int_input - input_zp), 
+                weight = (int_weight - weight_zp), 
+                bias = int_bias, 
+                stride = self.stride, 
+                padding = self.padding, 
+                dilation = self.dilation, 
+                groups = self.groups
+            )
+
+            # rounding
+            output = torch.div(output * (m * 256), 2**(shift), rounding_mode="floor")
+            output = torch.div(output, 256)
+            _mask = torch.logical_or( (torch.frac(output) == 0.5) , (torch.frac(output) == -0.5))
+            output[_mask] = output[_mask] + 0.5
+            output = torch.round(output) + output_zp
+            int_output = torch.clamp(output, 0, 255)
+
+            # relu
+            int_output[int_output < output_zp] = output_zp
+            real_output = output_scale * (int_output - output_zp)
+
+            # output zp/scale
+            real_output.zero_point = output_zp
+            real_output.scale = output_scale
+            real_output.HW_SIM = input_tensor.HW_SIM
+            if dump:
+                real_output.DUMP = dump
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_output', to_np(int_output))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'output_scale', to_np(torch.tensor([output_scale])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'output_zp', to_np(torch.tensor([output_zp])))
+                # Dump multiplier & shifter
+                save_np(os.path.join(self.dump_folder, self.layer_name),'multiplier', to_np(torch.round(torch.tensor([m * 256]))))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'shifter', to_np(torch.tensor([shift])))
+            return real_output
     
     def hwsim(self, qweight, input_tensor, output_tensor, prequant_output_tensor, dump=False):
         input_scale = input_tensor.scale
@@ -380,7 +512,7 @@ class QConvReLU2d(nnqat.Conv2d):
         # TODO: Only for 8-bit quantization
         _tmp = torch.div((m * 256) * (prequant_output_tensor / (input_scale * weight_scale)), (2 ** (shift)), rounding_mode="floor") / 256
         _mask = torch.logical_or( (torch.frac(_tmp) == 0.5) , (torch.frac(_tmp) == -0.5))
-        # breakpoint()
+        # # breakpoint()
         _tmp[_mask] = _tmp[_mask] + 0.5
         _tmp = torch.round(_tmp) + output_zp
         int_output = torch.clamp(_tmp, 0, 255)
@@ -400,19 +532,24 @@ class QConvReLU2d(nnqat.Conv2d):
         return hwsim_output
 
     def forward(self, input):
-        qweight = self.weight_fake_quant(self.weight)
-        weight_scale = self.weight_fake_quant.scale
-        qbias = torch.round(self.bias / (input.scale * weight_scale)) * (input.scale * weight_scale)
-        x = F.relu6(F.conv2d(input, qweight, qbias, self.stride, self.padding, self.dilation, self.groups))
-        if self.training: self.act_fake_quant.enable_observer()
-        else: self.act_fake_quant.disable_observer()
-        x_prequant = x.detach().clone()
-        x_quant = self.act_fake_quant(x_prequant)
-        x_quant.scale = self.act_fake_quant.scale
-        x_quant.zero_point = self.act_fake_quant.zero_point
-        ''' HW_SIM '''
-        if hasattr(input, 'HW_SIM') and input.HW_SIM:
-            x_quant = self.hwsim(qweight, input, x_quant, x, dump=(hasattr(input, 'DUMP') and input.DUMP))
+        # breakpoint()
+        if hasattr(input, 'testing') and input.testing:
+            x_quant = self.hwInference(self.weight, self.bias, input, dump=(hasattr(input, 'DUMP') and input.DUMP))
+            x_quant.testing = input.testing
+        else:
+            qweight = self.weight_fake_quant(self.weight)
+            weight_scale = self.weight_fake_quant.scale
+            qbias = torch.round(self.bias / (input.scale * weight_scale)) * (input.scale * weight_scale)
+            x = F.relu6(F.conv2d(input, qweight, qbias, self.stride, self.padding, self.dilation, self.groups))
+            if self.training: self.act_fake_quant.enable_observer()
+            else: self.act_fake_quant.disable_observer()
+            x_prequant = x.detach().clone()
+            x_quant = self.act_fake_quant(x_prequant)
+            x_quant.scale = self.act_fake_quant.scale
+            x_quant.zero_point = self.act_fake_quant.zero_point
+            ''' HW_SIM '''
+            if hasattr(input, 'HW_SIM') and input.HW_SIM:
+                x_quant = self.hwsim(qweight, input, x_quant, x, dump=(hasattr(input, 'DUMP') and input.DUMP))
         return x_quant
 
 class QMaxPool2d(nn.MaxPool2d):
@@ -470,6 +607,53 @@ class Q_Addition(nn.Module):
         self.layer_name = layer_name
         self.qconfig = qconfig
         self.act_fake_quant = qconfig.activation()
+    
+    def hwInference(self, input1, input2, dump=False):
+        with torch.no_grad():
+            input1_scale = input1.scale
+            input1_zp = input1.zero_point
+            input2_scale = input2.scale
+            input2_zp = input2.zero_point
+            output_scale = self.act_fake_quant.scale
+            output_zp = self.act_fake_quant.zero_point
+            m1, shift1 = get_mult_shift(input1_scale, 1, output_scale)
+            m2, shift2 = get_mult_shift(input2_scale, 1, output_scale)
+
+            int_input1 = torch.round(input1.to(torch.float64) / input1_scale + input1_zp)
+            int_input2 = torch.round(input2.to(torch.float64) / input2_scale + input2_zp)
+            
+            if dump:
+                save_np(os.path.join(self.dump_folder, self.layer_name), "input1_scale", to_np(input1_scale))
+                save_np(os.path.join(self.dump_folder, self.layer_name), "input1_zp", to_np(input1_zp))
+                save_np(os.path.join(self.dump_folder, self.layer_name), "input2_scale", to_np(input2_scale))
+                save_np(os.path.join(self.dump_folder, self.layer_name), "input2_zp", to_np(input2_zp))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_input1', to_np(int_input1))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'int_input2', to_np(int_input2))
+            
+            _tmp1 = torch.div((int_input1 - input1_zp) * (m1 * 256), 2 ** (shift1), rounding_mode="floor") 
+            _tmp2 = torch.div((int_input2 - input2_zp) * (m2 * 256), 2 ** (shift2), rounding_mode="floor") 
+            output = torch.div((_tmp1 + _tmp2), 256)
+            _mask = torch.logical_or((torch.frac(output) == 0.5), (torch.frac(output)==-0.5))
+            output[_mask] = output[_mask] + 0.5
+            int_output = torch.clamp(torch.round(output) + output_zp, 0, 255)
+            real_output = output_scale * (int_output - output_zp)
+
+            # output zp/scale
+            real_output.zero_point = output_zp
+            real_output.scale = output_scale
+            real_output.HW_SIM = input1.HW_SIM
+            if dump:
+                real_output.DUMP = dump
+                save_np(os.path.join(self.dump_folder, self.layer_name), "int_output", to_np(int_output))
+                save_np(os.path.join(self.dump_folder, self.layer_name), "output_scale", to_np(output_scale))
+                save_np(os.path.join(self.dump_folder, self.layer_name), "output_zp", to_np(output_zp))
+                # Dump multiplier & shifter
+                save_np(os.path.join(self.dump_folder, self.layer_name),'1_multiplier', to_np(torch.round(torch.tensor([m1 * 256]))))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'1_shifter', to_np(torch.tensor([shift1])))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'2_multiplier', to_np(torch.round(torch.tensor([m2 * 256]))))
+                save_np(os.path.join(self.dump_folder, self.layer_name),'2_shifter', to_np(torch.tensor([shift2])))
+
+            return real_output
 
     def hwsim(self, input1, input2, output, dump=False):
         input1_scale = input1.scale
@@ -510,18 +694,23 @@ class Q_Addition(nn.Module):
             save_np(os.path.join(self.dump_folder, self.layer_name),'2_shifter', to_np(torch.tensor([shift2])))
         return hwsim_output
 
-    def forward(self, input_1, input_2):        
-        output = input_1 + input_2
-        if self.training: self.act_fake_quant.enable_observer()
-        else: self.act_fake_quant.disable_observer()
-        output_prequant = output.detach().clone()
-        output_qaunt = self.act_fake_quant(output_prequant)
-        output_qaunt.scale = self.act_fake_quant.scale
-        output_qaunt.zero_point = self.act_fake_quant.zero_point
-        ''' HW_SIM ''' 
-        # we assert hw_sim is always true
-        if hasattr(input_1, 'HW_SIM') and input_1.HW_SIM:
-            output_qaunt = self.hwsim(input_1, input_2, output_qaunt, dump=(hasattr(input_1, 'DUMP') and input_1.DUMP))
+    def forward(self, input_1, input_2):
+        # breakpoint()
+        if hasattr(input_1, 'testing') and input_1.testing:
+            output_qaunt = self.hwInference(input_1, input_2, dump=(hasattr(input_1, 'DUMP') and input_1.DUMP))    
+            output_qaunt.testing = input_1.testing
+        else:    
+            output = input_1 + input_2
+            if self.training: self.act_fake_quant.enable_observer()
+            else: self.act_fake_quant.disable_observer()
+            output_prequant = output.detach().clone()
+            output_qaunt = self.act_fake_quant(output_prequant)
+            output_qaunt.scale = self.act_fake_quant.scale
+            output_qaunt.zero_point = self.act_fake_quant.zero_point
+            ''' HW_SIM ''' 
+            # we assert hw_sim is always true
+            if hasattr(input_1, 'HW_SIM') and input_1.HW_SIM:
+                output_qaunt = self.hwsim(input_1, input_2, output_qaunt, dump=(hasattr(input_1, 'DUMP') and input_1.DUMP))
         return output_qaunt
 
 

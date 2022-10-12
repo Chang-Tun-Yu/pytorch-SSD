@@ -9,6 +9,12 @@ from ..utils import box_utils
 from collections import namedtuple
 GraphPath = namedtuple("GraphPath", ['s0', 'name', 's1'])  #
 
+class TransformInput(nn.Module):
+    def __init__(self):
+        super(TransformInput, self).__init__()
+    
+    def forward(sefl, x):
+        return (x - 127.0) / 128.0
 class MySSD(nn.Module):
     def __init__(self, num_classes: int, mobilenet_0: nn.Sequential, mobilenet_1: nn.Sequential,
                  extra_net: nn.ModuleList, classification_headers: nn.ModuleList,
@@ -16,7 +22,7 @@ class MySSD(nn.Module):
         """Compose a SSD model using the given components.
         """
         super(MySSD, self).__init__()
-
+        self.transform = TransformInput()
         self.num_classes = num_classes
         self.mobilenet_0 = mobilenet_0
         self.mobilenet_1 = mobilenet_1
@@ -67,19 +73,27 @@ class MySSD(nn.Module):
             
     def forward(self, x: torch.Tensor): # -> Tuple[torch.Tensor, torch.Tensor]:
         # quantization setting
-        if self.training: self.input_fake_quant.enable_observer()
-        else: self.input_fake_quant.disable_observer()
-        x = self.input_fake_quant(x)
-        x.scale = self.input_fake_quant.scale.clone()
-        x.zero_point = self.input_fake_quant.zero_point.clone()
-        x.HW_SIM = self.HW_SIM
-        x.DUMP = self.DUMP 
+        # if self.training: self.input_fake_quant.enable_observer()
+        # else: self.input_fake_quant.disable_observer()
+        # x = self.input_fake_quant(x)
+        # x.scale = self.input_fake_quant.scale.clone()
+        # x.zero_point = self.input_fake_quant.zero_point.clone()
+        # x.HW_SIM = self.HW_SIM
+        # x.DUMP = self.DUMP 
+
+        
+        x_t = self.transform(x)
+        x_t.scale = 1 / 128.0
+        x_t.zero_point = 127
+        x_t.HW_SIM = self.HW_SIM
+        x_t.DUMP = self.DUMP
+        x_t.testing = self.is_test        
 
         confidences = []
         locations = []
         header_index = 0
         # TODO: quantize of input
-        y = self.mobilenet_0(x)
+        y = self.mobilenet_0(x_t)
         confidence, location = self.compute_header(header_index, y)
         confidences.append(confidence)
         locations.append(location)

@@ -1,3 +1,4 @@
+from sre_constants import BRANCH
 from vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 from vision.ssd.mobilenetv1_ssd import create_mobilenetv1_ssd, create_mobilenetv1_ssd_predictor
 from vision.ssd.mobilenetv1_ssd_lite import create_mobilenetv1_ssd_lite, create_mobilenetv1_ssd_lite_predictor
@@ -22,9 +23,11 @@ if len(sys.argv) < 3:
 model_path = sys.argv[1]
 label_path = sys.argv[2]
 
-for i in range(1, 10):
+cnt = 0
+for i in range(1, 2 ):
     
     image_path = os.path.join("D:/10_dataset/VOC/VOC2007_test/JPEGImages", f'{i:06}.jpg')
+    image_path = os.path.join("C:/Users/user/Desktop/image_300", '1.png')
     # os.mkdir("C:/Users/user/Desktop/tensor/{}".format(i+1))
 
     class_names = [name.strip() for name in open(label_path).readlines()]
@@ -38,7 +41,7 @@ for i in range(1, 10):
             l_list = l.strip().split()
             modules_to_fuse.append(l_list)
     torch.ao.quantization.fuse_modules(float_net, modules_to_fuse, inplace=True)
-    net = create_mobilenetv2_ssd_qunat(len(class_names), float_net, "./quant_dump", is_test=True)
+    net = create_mobilenetv2_ssd_qunat(len(class_names), float_net, "./quant_dump", is_test=True, dump=True)
 
 
     # if net_type == 'vgg16-ssd':
@@ -78,6 +81,7 @@ for i in range(1, 10):
     if not os.path.isfile(image_path):
         continue
     orig_image = cv2.imread(image_path)
+    resized_image = cv2.resize(orig_image, (300, 300))
     image = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB)
     boxes, labels, probs = predictor.predict(image, 10, 0.4)
 
@@ -100,6 +104,7 @@ for i in range(1, 10):
     cv2.imshow("fjfadojf", orig_image)
     cv2.waitKey(0)
     print(f"Found {len(probs)} objects. The output image is {path}")
+
 
 
 # print(class_names)

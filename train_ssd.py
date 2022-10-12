@@ -22,6 +22,7 @@ from vision.datasets.open_images import OpenImagesDataset
 from vision.nn.multibox_loss import MultiboxLoss
 from vision.ssd.config import vgg_ssd_config
 from vision.ssd.config import mobilenetv1_ssd_config
+from vision.ssd.config import mobilenetv2_ssd_quant_config
 from vision.ssd.config import squeezenet_ssd_config
 from vision.ssd.data_preprocessing import TrainAugmentation, TestTransform
 
@@ -210,7 +211,7 @@ if __name__ == '__main__':
                 modules_to_fuse.append(l_list)
         torch.ao.quantization.fuse_modules(float_net, modules_to_fuse, inplace=True)
         create_net = lambda num: create_mobilenetv2_ssd_qunat(num, float_net, "./quant_dump")
-        config = mobilenetv1_ssd_config
+        config = mobilenetv2_ssd_quant_config
     else:
         logging.fatal("The net type is wrong.")
         parser.print_help(sys.stderr)

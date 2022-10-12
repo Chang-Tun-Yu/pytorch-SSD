@@ -7,7 +7,7 @@ from ..nn.mobilenet_v2 import MobileNetV2, InvertedResidual
 import os
 from .myssd import MySSD
 from .predictor import Predictor
-from .config import mobilenetv1_ssd_config as config
+from .config import mobilenetv2_ssd_quant_config as config
 from ..quantized_modules import *
 
 class QResidualBlock(nn.Module):
